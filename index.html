@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Т-Банк OSINT Board</title>
+    <style>
+        :root {
+            --bg-color: #000000;
+            --grid-color: #1a1a1a;
+            --accent: #ffffff;
+            --text: #ffffff;
+            --panel-bg: #0a0a0a;
+        }
+
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            background: var(--bg-color);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+
+        /* Шапка */
+        #top-bar {
+            height: 50px;
+            background: var(--bg-color);
+            border-bottom: 1px solid var(--accent);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 20px;
+            z-index: 100;
+            position: relative;
+        }
+
+        .brand {
+            font-weight: 900;
+            letter-spacing: 1px;
+            font-size: 14px;
+            border-right: 1px solid var(--grid-color);
+            padding-right: 20px;
+        }
+
+        .nav-link {
+            font-size: 12px;
+            text-transform: uppercase;
+            cursor: pointer;
+            padding: 5px 10px;
+            transition: 0.2s;
+            border: 1px solid transparent;
+        }
+
+        .nav-link:hover { border: 1px solid var(--accent); }
+
+        /* Кнопки управления */
+        .controls { margin-left: auto; display: flex; gap: 10px; }
+        
+        .btn {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--accent);
+            padding: 5px 12px;
+            cursor: pointer;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .btn:hover { background: var(--text); color: var(--bg-color); }
+        .btn.active { background: #ff0000; border-color: #ff0000; color: white; }
+
+        /* Панели (Странички) */
+        .modal-panel {
+            display: none;
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 350px;
+            background: var(--panel-bg);
+            border: 1px solid var(--accent);
+            padding: 25px;
+            z-index: 1000;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--grid-color);
+            padding-bottom: 10px;
+        }
+
+        .close-panel { cursor: pointer; font-size: 20px; }
+
+        .modal-panel a {
+            display: block;
+            color: var(--text);
+            text-decoration: none;
+            padding: 10px;
+            border: 1px solid var(--grid-color);
+            margin-bottom: 10px;
+            text-align: center;
+            font-size: 13px;
+        }
+
+        .modal-panel a:hover { background: var(--accent); color: var(--bg-color); }
+
+        /* Объекты на доске */
+        #board {
+            width: 100vw;
+            height: calc(100vh - 50px);
+            position: relative;
+            background-image: radial-gradient(var(--grid-color) 1px, transparent 1px);
+            background-size: 25px 25px;
+        }
+
+        .node {
+            position: absolute;
+            min-width: 100px; /* Уменьшенная рамка */
+            padding: 8px 12px;
+            background: var(--bg-color);
+            border: 1px solid var(--accent);
+            color: var(--text);
+            cursor: move;
+            z-index: 2;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        /* Линии */
+        svg {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        line { stroke: var(--accent); stroke-width: 1; opacity: 0.7; }
+        
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 900;
+        }
+    </style>
+</head>
+<body>
+
+<div id="top-bar">
+    <div class="brand">Т-БАНК OSINT</div>
+    <div class="nav-link" onclick="openPanel('creator-panel')">Создатель</div>
+    <div class="nav-link" onclick="openPanel('projects-panel')">Наши проекты</div>
+
+    <div class="controls">
+        <button class="btn" onclick="addNode()">+ Объект</button>
+        <button id="linkBtn" class="btn" onclick="toggleConnectMode()">Связь: OFF</button>
+    </div>
+</div>
+
+<div id="creator-panel" class="modal-panel">
+    <div class="modal-header">
+        <span>КОНТАКТЫ</span>
+        <span class="close-panel" onclick="closePanels()">&times;</span>
+    </div>
+    <a href="https://t.me/notpaxa" target="_blank">Telegram: @notpaxa</a>
+</div>
+
+<div id="projects-panel" class="modal-panel">
+    <div class="modal-header">
+        <span>ПРОЕКТЫ</span>
+        <span class="close-panel" onclick="closePanels()">&times;</span>
+    </div>
+    <a href="https://t.me/+LE6O9Z7Y59tkOWNi" target="_blank">Т-Банк Проект</a>
+    <a href="https://t.me/tbfamelist" target="_blank">Фейм Лист КМ</a>
+</div>
+
+<div id="overlay" class="overlay" onclick="closePanels()"></div>
+
+<div id="board">
+    <svg id="lines"></svg>
+</div>
+
+<script>
+    const board = document.getElementById("board");
+    const svg = document.getElementById("lines");
+    const linkBtn = document.getElementById("linkBtn");
+    const overlay = document.getElementById("overlay");
+    
+    let nodes = [];
+    let edges = [];
+    let connectMode = false;
+    let selectedNode = null;
+
+    // Управление панелями
+    function openPanel(id) {
+        closePanels();
+        document.getElementById(id).style.display = 'block';
+        overlay.style.display = 'block';
+    }
+
+    function closePanels() {
+        document.querySelectorAll('.modal-panel').forEach(p => p.style.display = 'none');
+        overlay.style.display = 'none';
+    }
+
+    function toggleConnectMode() {
+        connectMode = !connectMode;
+        linkBtn.classList.toggle('active', connectMode);
+        linkBtn.innerText = connectMode ? "Связь: ON" : "Связь: OFF";
+        if (!connectMode && selectedNode) {
+            selectedNode.style.borderColor = "white";
+            selectedNode = null;
+        }
+    }
+
+    function addNode() {
+        const node = document.createElement("div");
+        node.className = "node";
+        node.tabIndex = 0;
+        node.contentEditable = true;
+        node.innerText = "ОБЪЕКТ";
+        node.style.left = (window.innerWidth / 2 - 50) + "px";
+        node.style.top = (window.innerHeight / 2 - 20) + "px";
+
+        board.appendChild(node);
+        nodes.push(node);
+
+        node.addEventListener("mousedown", dragStart);
+        node.addEventListener("click", (e) => handleNodeClick(e, node));
+        node.addEventListener("contextmenu", (e) => {
+            e.preventDefault();
+            deleteNode(node);
+        });
+    }
+
+    function handleNodeClick(e, node) {
+        if (!connectMode) return;
+        if (!selectedNode) {
+            selectedNode = node;
+            node.style.borderColor = "#ff0000";
+        } else if (selectedNode !== node) {
+            createLine(selectedNode, node);
+            selectedNode.style.borderColor = "white";
+            selectedNode = null;
+        }
+    }
+
+    function dragStart(e) {
+        if (connectMode || document.activeElement === e.target) return;
+        const node = e.currentTarget;
+        let shiftX = e.clientX - node.getBoundingClientRect().left;
+        let shiftY = e.clientY - node.getBoundingClientRect().top;
+
+        function move(e) {
+            node.style.left = e.clientX - shiftX + "px";
+            node.style.top = (e.clientY - 50) - shiftY + "px";
+            redrawLines();
+        }
+
+        document.addEventListener("mousemove", move);
+        document.addEventListener("mouseup", () => {
+            document.removeEventListener("mousemove", move);
+        }, { once: true });
+    }
+
+    function createLine(a, b) {
+        const exists = edges.some(e => (e.a === a && e.b === b) || (e.a === b && e.b === a));
+        if (exists) return;
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        svg.appendChild(line);
+        edges.push({ a, b, line });
+        redrawLines();
+    }
+
+    function deleteNode(node) {
+        edges = edges.filter(edge => {
+            if (edge.a === node || edge.b === node) {
+                edge.line.remove();
+                return false;
+            }
+            return true;
+        });
+        nodes = nodes.filter(n => n !== node);
+        node.remove();
+    }
+
+    function redrawLines() {
+        const boardRect = board.getBoundingClientRect();
+        edges.forEach(e => {
+            const ra = e.a.getBoundingClientRect();
+            const rb = e.b.getBoundingClientRect();
+            e.line.setAttribute("x1", ra.left + ra.width / 2 - boardRect.left);
+            e.line.setAttribute("y1", ra.top + ra.height / 2 - boardRect.top);
+            e.line.setAttribute("x2", rb.left + rb.width / 2 - boardRect.left);
+            e.line.setAttribute("y2", rb.top + rb.height / 2 - boardRect.top);
+        });
+    }
+
+    window.addEventListener('resize', redrawLines);
+</script>
+
+</body>
+</html>
